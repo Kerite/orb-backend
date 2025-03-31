@@ -235,30 +235,21 @@ def chatV2():
         return jsonify({"error": str(e)}), 500
     
     
-@app.route('/api/save_episodic_memory', methods=['GET'])
-def episodic_memory():
+@app.route('/api/save_episodic_memory', methods=['POST'])
+def save_episodic():
     try:
-        # 获取用户id
-        # data = request.json
-        # if not data or 'message' not in data:
-        #     return jsonify({"error": "Message cannot be empty"}), 400
-        
-        # user_id = data.get('user_id', 'default_user')
-        
-        # # 获取用户所有对话
-        # if user_id not in global_memory:
-        #     return jsonify({"error": "Message cannot be empty"}), 400
-                
-        # messages = global_memory[user_id]
-        messages = global_memory["user_57d57b4dab129529dffc6f6065edeb8a"]
-        # 传入message + 传入promt
-        add_episodic_memory(messages)
-        # 解析返回打印
+        data = request.json
+        user_id = data.get('user_id', 'default_user')
+        messages = global_memory.get(user_id, [])
+        # 如何为空直接返回
+        if not messages:
+            return jsonify({"error": "no conversation"}), 500
+        add_episodic_memory(messages, user_id)  # 调用新版存储方法
+        return jsonify({"status": "success"})
     except Exception as e:
-        print(f"Export Error: {str(e)}")
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500 
-    
+        logger.error(f"Save error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/del_episodic_memory', methods=['DELETE'])
 def delete_episodic_memory():
     """Delete a user's episodic memory from global storage"""
@@ -287,7 +278,6 @@ def delete_episodic_memory():
         print(f"Deletion Error: {str(e)}")
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-
 def run_api(host='localhost', port=5000, debug=False):
     """Run the API server"""
     app.run(host=host, port=port, debug=debug, use_reloader=debug)

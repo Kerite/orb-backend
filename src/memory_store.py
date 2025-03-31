@@ -169,7 +169,7 @@ def import_qdrant_snapshot(snapshot_path, user_id="default_user", collection_nam
         traceback.print_exc()  # Print full stack for debugging
         return False
     
-# 使用
+# update current user_id
 def update_user_id_in_collection(collection_name, target_user_id):
     try:
         # 构建过滤条件

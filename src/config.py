@@ -4,6 +4,7 @@ from mem0 import Memory
 from qdrant_client import QdrantClient
 import os
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from qdrant_client.models import VectorParams, Distance
 
 # 全局用户对话记忆（Key: user_id, Value: List[Message]）
 global_memory = {}
@@ -93,9 +94,13 @@ def get_user_memory(user_id="default_user"):
 # 默认内存对象
 memory = Memory.from_config(config)
 
+# 定义集合参数
+COLLECTION_NAME = "episodic_memory"
+VECTOR_SIZE = 1024  # 与mxbai-embed-large模型输出维度一致
+
 payload_schema = {
     "conversation": str,             # 对话内容（TEXT）
-    "context_tags": list[str],       # 上下文标签（TEXT_ARRAY）
+    "context_tags": list[str],       # 上下文标签（TEXT5_ARRAY）
     "conversation_summary": str,     # 摘要文本（TEXT）
     "what_worked": str,              # 有效策略（TEXT）
     "what_to_avoid": str             # 需避免内容（TEXT）
@@ -105,25 +110,12 @@ payload_schema = {
 COLLECTION_NAME = "episodic_memory"
 VECTOR_SIZE = 1024  # 与mxbai-embed-large模型输出维度一致
 
-# 创建集合（等效Weaviate的collections.create）
-# qdrant_client.recreate_collection(
-#     collection_name=COLLECTION_NAME,
-#     vectors_config=models.VectorParams(
-#         size=VECTOR_SIZE,
-#         distance=models.Distance.COSINE  # 余弦相似度
-#     )
-# )
-
-# def get_collection_name(user_id: str) -> str:
-#     """生成用户专属集合名（避免数据混杂）"""
-#     return f"memory_orb_{user_id}"
-
-# def init_user_collection(user_id: str):
-#     """按需初始化用户专属集合"""
-#     qdrant_client.recreate_collection(
-#         collection_name=get_collection_name(user_id),
-#         vectors_config=models.VectorParams(
-#             size=VECTOR_SIZE,
-#             distance=models.Distance.COSINE
-#         )
-#     )
+def init_user_collection(user_id: str):
+    collection_name = get_collection_name(user_id)
+    qdrant_client.recreate_collection(
+    collection_name=collection_name,
+    vectors_config=VectorParams(
+        size=config["vector_store"]["config"]["embedding_model_dims"],
+        distance=Distance.COSINE
+    )
+)

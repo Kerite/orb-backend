@@ -1,8 +1,12 @@
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-from .config import get_user_memory, openai_client, llm, global_memory
+from .config import get_user_memory, openai_client, llm, global_memory, get_collection_name, init_user_collection
 from .config import config, qdrant_client, embedder_info
-
+from uuid import uuid4
+from qdrant_client.models import PointStruct, Filter, FieldCondition, MatchText
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+import requests
+from typing import List
 
 def creat_reflection_prompt():
     reflection_prompt_template = """
@@ -89,40 +93,121 @@ def format_conversation(messages):
     # Join with newlines
     return "\n".join(conversation)
 
+def embed_text(text: str) -> List[float]:
+    """使用 Ollama 生成向量（保持与原始配置相同）"""
+    response = requests.post(
+        "http://localhost:11434/api/embeddings",  # 使用 HTTP 协议
+        json={"model": "nomic-embed-text", "text": text}
+    )
+    if response.status_code != 200:
+        raise Exception(f"Ollama API 请求失败: {response.text}")
+    return response.json().get("embedding", [])
 
-def add_episodic_memory(messages):
-    
-    # Format Messages
+# 增加情景记忆
+def add_episodic_memory(messages, user_id="default_user"):
+    # 初始化用户集合
+    collection_name = get_collection_name(user_id)
+    if not qdrant_client.collection_exists(collection_name):
+        init_user_collection(user_id)  # 确保调用初始化
+        print("/n 初始化")
+    else:
+        print("/n 已初始化")
+
+    # 生成嵌入向量
     conversation = format_conversation(messages)
-
-    # Create Reflection
     reflection = creat_reflection_prompt().invoke({"conversation": conversation})
-    print("\n reflection: ", reflection)
+    print("/n",reflection)
+    
+    summary = reflection.get('conversation_summary', "")
+    embedding = embed_text([summary])[0]
+
+    # 构造Qdrant数据点
+    point = PointStruct(
+        id=str(uuid4()),
+        vector=embedding,
+        payload={
+            "conversation": conversation,
+            "context_tags": reflection.get('context_tags', []),
+            "conversation_summary": reflection.get('conversation_summary', ""),
+            "what_worked": reflection.get('what_worked', ""),
+            "what_to_avoid": reflection.get('what_to_avoid', "")
+        }
+    )
+
+    # 批量插入
+    qdrant_client.upsert(
+        collection_name=collection_name,
+        points=[point]
+    )
 
 
-# def query_collection(message: str, user_id: str = "default_user", limit: int = 5):
+def episodic_recall(query: str, user_id: str = "default_user", alpha=0.5):
+    collection_name = get_collection_name(user_id)
     
-#     # 生成查询向量
-#     query_vector = embedder_info.embed_query(message)
+    # 生成双路查询条件
+    vector = embedder_info.embed_query(query)
+    bm25_filter = Filter(
+        must=[FieldCondition(key="conversation", match=MatchText(text=query))]
+    )
+
+    # 混合检索实现
+    vector_results = qdrant_client.search(
+        collection_name=collection_name,
+        query_vector=vector,
+        limit=5
+    )
     
-#     # 构造集合名称（与config.py逻辑一致）
-#     collection_name = f"memory_orb_{user_id}"
+    keyword_results = qdrant_client.scroll(
+        collection_name=collection_name,
+        scroll_filter=bm25_filter,
+        limit=5
+    )
+
+    # 结果融合算法
+    combined = hybrid_merge(
+        vector_results, 
+        keyword_results,
+        alpha=alpha
+    )
+    return combined[:3]  # 返回Top3结果
+
+def hybrid_merge(vector_res, keyword_res, alpha):
+    # 实现得分加权融合算法
+    scores = {}
+    for idx, item in enumerate(vector_res):
+        scores[item.id] = alpha * (1 - item.score)  # Qdrant返回余弦相似度得分
     
-#     # 执行向量相似度搜索
-#     results = qdrant_client.search(
-#         collection_name=collection_name,
-#         query_vector=query_vector,
-#         limit=limit,
-#         with_payload=True  # 返回存储的元数据
-#     )
+    for idx, item in enumerate(keyword_res):
+        bm25_score = (idx + 1) / len(keyword_res)  # 简化的BM25得分估算
+        if item.id in scores:
+            scores[item.id] += (1 - alpha) * bm25_score
+        else:
+            scores[item.id] = (1 - alpha) * bm25_score
     
-#     print("\n results", results)
+    # 合并去重并排序
+    all_items = {item.id: item for item in vector_res + keyword_res}
+    sorted_items = sorted(
+        all_items.values(),
+        key=lambda x: scores.get(x.id, 0),
+        reverse=True
+    )
+    return sorted_items
+
+
+def episodic_system_prompt(query: str, user_id: str):
+    memories = episodic_recall(query, user_id)
+    if not memories:
+        return SystemMessage(content="You are a helpful AI Assistant.")
     
-#     # 提取并格式化结果
-#     return [
-#         {
-#             "memory": result.payload.get("memory"),
-#             "score": result.score
-#         }
-#         for result in results
-#     ]
+    current_memory = memories[0].payload
+    previous_convos = [m.payload["conversation_summary"] for m in memories[1:4]]
+    
+    prompt_template = f"""
+    You are a helpful AI Assistant with conversation memory:
+    
+    Current Context Tags: {', '.join(current_memory['context_tags'])}
+    Key Insight: {current_memory['what_worked']}
+    Avoid: {current_memory['what_to_avoid']}
+    Recent History: {' | '.join(previous_convos)}
+    """
+    return SystemMessage(content=prompt_template)
