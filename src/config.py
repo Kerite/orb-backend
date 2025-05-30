@@ -5,25 +5,27 @@ from qdrant_client import QdrantClient
 import os
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from qdrant_client.models import VectorParams, Distance
+from dotenv import load_dotenv
+
+load_dotenv(verbose=True)
 
 # 全局用户对话记忆（Key: user_id, Value: List[Message]）
 global_memory = {}
 
+# API configuration
+API_KEY = os.getenv("OPENAI_API_KEY")
+BASE_URL = os.getenv("OPENAI_API_BASE")
+
+if API_KEY is None or BASE_URL is None:
+    raise ValueError("Please set the OPENAI_API_KEY and OPENAI_API_BASE environment variables.")
+
 llm = ChatOpenAI(
     base_url="https://api.openai.com/v1",
-    api_key="Your API key",
+    api_key=API_KEY,
     model="gpt-4o-mini",
     temperature=0.7,
     max_tokens=1024
 )
-
-# API configuration
-API_KEY = "Your API Key"
-BASE_URL = "https://api.openai.com/v1"
-
-# Set environment variables
-os.environ["OPENAI_API_KEY"] = API_KEY
-os.environ["OPENAI_API_BASE"] = BASE_URL
 
 # 基础集合名称前缀
 BASE_COLLECTION_NAME = "memory_orb"
@@ -74,8 +76,6 @@ qdrant_client = QdrantClient(
 
 embedder_info = OpenAIEmbeddings(
     model=config["embedder"]["config"]["model"],
-    openai_api_base=BASE_URL,
-    openai_api_key=API_KEY
 )
 
 # 获取用户特定的内存配置

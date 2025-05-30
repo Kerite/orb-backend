@@ -10,54 +10,54 @@ from qdrant_client.http import models
 def export_qdrant_snapshot(user_id="default_user", collection_name=None, snapshot_path=None):
     """
     Export Qdrant collection to a snapshot file
-    
+
     Args:
         user_id: User ID to specify which collection to export
         collection_name: Name of the collection to export, default is based on user_id
         snapshot_path: Path to save the snapshot file, default is a timestamp-named file in the your_memory directory
-        
+
     Returns:
         str: Path where the snapshot file is saved
     """
     if collection_name is None:
         collection_name = get_collection_name(user_id)
-    
+
     # 创建保存快照的目录
     memory_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "your_memory", user_id)
     if not os.path.exists(memory_dir):
         print(f"Creating directory: {memory_dir}")
         os.makedirs(memory_dir)
-    
+
     if snapshot_path is None:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         snapshot_filename = f"{collection_name}_snapshot_{timestamp}"
         snapshot_path = os.path.join(memory_dir, snapshot_filename)
-    
+
     try:
         # Check if the collection exists
         collections = qdrant_client.get_collections()
         collection_exists = any(col.name == collection_name for col in collections.collections)
-        
+
         if not collection_exists:
             print(f"Collection '{collection_name}' does not exist")
             return None
-            
+
         # Step 1: Create snapshot
         print(f"Creating snapshot for collection '{collection_name}'...")
         # Use REST API to create snapshot
         qdrant_host = config["vector_store"]["config"]["host"]
         qdrant_port = config["vector_store"]["config"]["port"]
         create_snapshot_url = f"http://{qdrant_host}:{qdrant_port}/collections/{collection_name}/snapshots"
-        
+
         response = requests.post(create_snapshot_url)
         if response.status_code != 200:
             print(f"Failed to create snapshot: {response.text}")
             return None
-        
+
         # Print full response for debugging
         print(f"API response: {response.text}")
         response_data = response.json()
-        
+
         # Try to get snapshot name from response, handle possible different response structures
         if "name" in response_data:
             snapshot_name = response_data["name"]
@@ -67,28 +67,28 @@ def export_qdrant_snapshot(user_id="default_user", collection_name=None, snapsho
             # If name is not found, use timestamp as name
             snapshot_name = f"snapshot-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
             print(f"Unable to get snapshot name from response, using temporary name: {snapshot_name}")
-        
+
         print(f"Snapshot created successfully: {snapshot_name}")
-        
+
         # Step 2: Download snapshot
         print(f"Downloading snapshot...")
         download_snapshot_url = f"http://{qdrant_host}:{qdrant_port}/collections/{collection_name}/snapshots/{snapshot_name}"
-        
+
         with requests.get(download_snapshot_url, stream=True) as r:
             if r.status_code != 200:
                 print(f"Failed to download snapshot: {r.text}")
                 return None
-                
+
             r.raise_for_status()
             output_file = f"{snapshot_path}.snapshot"
             with open(output_file, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
-        
+
         full_path = os.path.abspath(f"{snapshot_path}.snapshot")
         print(f"Snapshot successfully exported to: {full_path}")
         return full_path
-        
+
     except Exception as e:
         print(f"Error exporting snapshot: {str(e)}")
         traceback.print_exc()  # Print full error stack
