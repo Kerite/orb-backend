@@ -12,6 +12,7 @@ import json
 from langchain_core.messages import HumanMessage, SystemMessage
 from src.memory_v2 import add_episodic_memory
 from werkzeug.exceptions import HTTPException
+from src.utils import extract_chatgpt_share_messages
 
 # Set up logging
 logging.basicConfig(
@@ -310,6 +311,32 @@ def delete_episodic_memory():
         print(f"Deletion Error: {str(e)}")
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/chatgpt-share', methods=['POST'])
+def extract_chatgpt_share():
+    """
+    Extract messages from a public ChatGPT share URL.
+    Expects a JSON body with a 'url' field.
+    """
+    try:
+        data = request.json
+        if not data or 'url' not in data:
+            return jsonify({"error": "URL is required"}), 400
+
+        url = data['url']
+        print(f"Extracting messages from URL: {url}")
+
+        messages = extract_chatgpt_share_messages(url)
+        return jsonify({"messages": messages}), 200
+
+    except ValueError as ve:
+        print(f"Value Error: {str(ve)}")
+        return jsonify({"error": str(ve)}), 400
+    except Exception as e:
+        print(f"Error extracting messages: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 def run_api(host='localhost', port=5000, debug=False):
     """Run the API server"""
     app.run(host=host, port=port, debug=debug, use_reloader=debug)

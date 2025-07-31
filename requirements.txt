@@ -10,6 +10,7 @@ langchain>=0.1.0       # 主包（基础功能）
 langchain-openai>=0.1.0      # OpenAI 集成
 urllib3>=1.26.0,<2.0
 httpx>=0.24.0
+beautifulsoup4==4.13.4
 
 # Additional useful packages
 python-dotenv>=0.19.0  # 环境变量管理
