@@ -52,6 +52,12 @@ API_KEY = "your DeepSeek API-key"
 BASE_URL = "https://api.deepseek.com"
 ```
 
+#### Install playwright
+
+```bash
+pip install playwright
+playwright install
+```
 
 ### 3. Run the Backend Server
 

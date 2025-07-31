@@ -12,7 +12,7 @@ import json
 from langchain_core.messages import HumanMessage, SystemMessage
 from src.memory_v2 import add_episodic_memory
 from werkzeug.exceptions import HTTPException
-from src.utils import extract_chatgpt_share_messages
+from src.utils import extract_chatgpt_share_from_link
 
 # Set up logging
 logging.basicConfig(
@@ -326,7 +326,7 @@ def extract_chatgpt_share():
         url = data['url']
         print(f"Extracting messages from URL: {url}")
 
-        messages = extract_chatgpt_share_messages(url)
+        messages = extract_chatgpt_share_from_link(url)
         return jsonify({"messages": messages}), 200
 
     except ValueError as ve:
